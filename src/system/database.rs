@@ -89,7 +89,7 @@ impl<Hash: ChunkHash, V: Clone> Database<Hash, V> for HashMap<Hash, V> {
     }
 
     fn get(&mut self, key: &Hash) -> io::Result<V> {
-        (&*self).get(key).ok_or(io::ErrorKind::NotFound.into()).cloned()
+        (&*self).get(key).ok_or(ErrorKind::NotFound.into()).cloned()
     }
 
     fn contains(&self, key: &Hash) -> bool {
@@ -140,7 +140,7 @@ impl<K, V> DiskDatabase<K, V> {
         'outer: for (i, &interval) in self.bitmap.iter().enumerate() {
             let i = i as u64;
             for bit in 0..64 {
-                if (interval & (1 << (63 - bit))) == 0 { // is bit = 0
+                if (interval & (1 << (63 - bit))) == 0 { // is the bit = 0
                     if free_bits_count == 0 {
                         start_segment = i * 64 + bit;
                     }
@@ -202,7 +202,7 @@ where
 
         self.device.seek(SeekFrom::Start(self.bitmap_size + self.map_size + start_segment * SEGMENT_SIZE))?;
         self.device.write_all(&encoded)?;
-        self.map.insert(key, DataInfo { segment_number: start_segment, data_length: data_length });
+        self.map.insert(key, DataInfo { segment_number: start_segment, data_length });
         Ok(())
     }
 
