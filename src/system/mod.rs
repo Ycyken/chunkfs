@@ -23,7 +23,7 @@ pub mod storage;
 pub struct FileSystem<B, H, Hash, K, T>
 where
     B: Database<Hash, DataContainer<K>>,
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
     T: Database<K, Vec<u8>>,
 {
@@ -43,7 +43,7 @@ pub fn create_cdc_filesystem<B, H, Hash>(
 ) -> FileSystem<B, H, Hash, (), HashMap<(), Vec<u8>>>
 where
     B: Database<Hash, DataContainer<()>>,
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
 {
     FileSystem::new(base, hasher, HashMap::default())
@@ -52,7 +52,7 @@ where
 impl<B, H, Hash, K, T> FileSystem<B, H, Hash, K, T>
 where
     B: Database<Hash, DataContainer<K>>,
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
     T: Database<K, Vec<u8>>,
 {
@@ -148,7 +148,7 @@ where
     }
 
     /// Reads all contents of the file from beginning to end and returns them.
-    pub fn read_file_complete(&self, handle: &FileHandle) -> io::Result<Vec<u8>> {
+    pub fn read_file_complete(&mut self, handle: &FileHandle) -> io::Result<Vec<u8>> {
         let hashes = self.file_layer.read_complete(handle);
         Ok(self.storage.retrieve(&hashes)?.concat()) // it assumes that all retrieved data segments are in correct order
     }
@@ -156,7 +156,7 @@ where
     /// Reads at most 1 MB of data from a file and returns it.
     ///
     /// **Careful:** it modifies internal `FileHandle` data. After using this `write_to_file` should not be used on the same FileHandle.
-    pub fn read_from_file(&self, handle: &mut FileHandle) -> io::Result<Vec<u8>> {
+    pub fn read_from_file(&mut self, handle: &mut FileHandle) -> io::Result<Vec<u8>> {
         let hashes = self.file_layer.read(handle);
         Ok(self.storage.retrieve(&hashes)?.concat())
     }
@@ -180,7 +180,7 @@ where
     /// Writes a file from the file system to the disk by the specified path.
     ///
     /// Will fail if the file already exists by the specified path.
-    pub fn write_file_to_disk<P: AsRef<Path>>(&self, name: &str, path: P) -> io::Result<()> {
+    pub fn write_file_to_disk<P: AsRef<Path>>(&mut self, name: &str, path: P) -> io::Result<()> {
         let mut handle = self.open_file_readonly(name)?;
 
         let mut file = std::fs::File::options()
@@ -219,7 +219,7 @@ where
 impl<B, H, Hash, K, T> FileSystem<B, H, Hash, K, T>
 where
     B: IterableDatabase<Hash, DataContainer<K>>,
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
     T: Database<K, Vec<u8>>,
 {
@@ -264,7 +264,7 @@ where
     }
 
     /// Returns an immutable iterator over storage chunks.
-    pub fn storage_iterator(&self) -> Box<dyn Iterator<Item = (&Hash, &DataContainer<K>)> + '_> {
+    pub fn storage_iterator(&self) -> Box<dyn Iterator<Item=(&Hash, &DataContainer<K>)> + '_> {
         self.storage.iterator()
     }
 
@@ -280,7 +280,7 @@ where
 
 impl<B, H, Hash, K, T> FileSystem<B, H, Hash, K, T>
 where
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
     B: IterableDatabase<H::Hash, DataContainer<K>>,
     T: IterableDatabase<K, Vec<u8>>,

@@ -25,13 +25,14 @@ rand = { version = "0.8", optional = true }
 itertools = { version = "0.14", optional = true }
 fastcdc = { version = "3", optional = true }
 csv = { version = "1", optional = true }
-serde = { version = "1", optional = true, features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_with = { version = "3", optional = true }
+bincode = "1.3.3"
 
 [features]
 chunkers = ["cdc-chunkers", "fastcdc"]
 hashers = ["sha2"]
-bench = ["uuid", "rand", "itertools", "csv", "serde", "serde_with"]
+bench = ["uuid", "rand", "itertools", "csv", "serde_with"]
 
 [dev-dependencies]
 chunkfs = { path = ".", features = ["chunkers", "hashers", "bench"] }

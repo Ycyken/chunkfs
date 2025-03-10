@@ -116,11 +116,14 @@ fn non_iterable_database_can_be_used_with_fs() {
     struct DummyDatabase;
 
     impl Database<Vec<u8>, DataContainer<()>> for DummyDatabase {
+        fn init(_: &str) -> Result<DummyDatabase, std::io::Error> {
+            Ok(Self {})
+        }
         fn insert(&mut self, _key: Vec<u8>, _value: DataContainer<()>) -> std::io::Result<()> {
             unimplemented!()
         }
 
-        fn get(&self, _key: &Vec<u8>) -> std::io::Result<DataContainer<()>> {
+        fn get(&mut self, _key: &Vec<u8>) -> std::io::Result<DataContainer<()>> {
             unimplemented!()
         }
 

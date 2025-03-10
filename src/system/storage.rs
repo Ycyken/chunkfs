@@ -44,7 +44,7 @@ impl<Hash: ChunkHash> Span<Hash> {
 /// Underlying storage for the actual stored data.
 pub struct ChunkStorage<H, Hash, B, K, T>
 where
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
     B: Database<Hash, DataContainer<K>>,
     T: Database<K, Vec<u8>>,
@@ -58,7 +58,7 @@ where
 
 impl<H, Hash, B, K, T> ChunkStorage<H, Hash, B, K, T>
 where
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
     B: Database<H::Hash, DataContainer<K>>,
     T: Database<K, Vec<u8>>,
@@ -144,7 +144,7 @@ where
 
     /// Retrieves the data from the storage based on hashes of the data [`segments`][Segment],
     /// or Error(NotFound) if some of the hashes were not present in the base.
-    pub fn retrieve(&self, request: &[H::Hash]) -> io::Result<Vec<Vec<u8>>> {
+    pub fn retrieve(&mut self, request: &[H::Hash]) -> io::Result<Vec<Vec<u8>>> {
         let retrieved = self.database.get_multi(request)?;
 
         retrieved
@@ -164,7 +164,7 @@ where
 
 impl<H, Hash, B, K, T> ChunkStorage<H, Hash, B, K, T>
 where
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
     B: IterableDatabase<H::Hash, DataContainer<K>>,
     T: Database<K, Vec<u8>>,
@@ -237,7 +237,7 @@ where
         (self.size_written as f64) / (self.total_cdc_size() as f64 + key_size as f64)
     }
 
-    pub fn iterator(&self) -> Box<dyn Iterator<Item = (&Hash, &DataContainer<K>)> + '_> {
+    pub fn iterator(&self) -> Box<dyn Iterator<Item=(&Hash, &DataContainer<K>)> + '_> {
         self.database.iterator()
     }
 
@@ -250,7 +250,7 @@ where
 
 impl<H, Hash, B, K, T> ChunkStorage<H, Hash, B, K, T>
 where
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
     B: IterableDatabase<H::Hash, DataContainer<K>>,
     T: IterableDatabase<K, Vec<u8>>,
@@ -503,7 +503,7 @@ mod tests {
             vec![16; 1024 * 256],
             vec![32; 1024 * 256],
         ]
-        .concat();
+            .concat();
 
         let chunker = SuperChunker::default().into();
 

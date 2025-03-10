@@ -25,7 +25,7 @@ use crate::{
 pub struct CDCFixture<B, H, Hash>
 where
     B: IterableDatabase<Hash, DataContainer<()>>,
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
 {
     pub fs: FileSystem<B, H, Hash, (), HashMap<(), Vec<u8>>>,
@@ -34,7 +34,7 @@ where
 impl<B, H, Hash> CDCFixture<B, H, Hash>
 where
     B: IterableDatabase<Hash, DataContainer<()>>,
-    H: Hasher<Hash = Hash>,
+    H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
 {
     /// Creates a fixture, opening a database with given base and hasher.
@@ -185,7 +185,7 @@ where
     /// Verifies that the written dataset contents are valid.
     ///
     /// Returns read time for the file.
-    fn verify(&self, dataset: &Dataset, uuid: &str) -> io::Result<Duration> {
+    fn verify(&mut self, dataset: &Dataset, uuid: &str) -> io::Result<Duration> {
         let file = self.fs.open_file_readonly(uuid)?;
 
         let now = Instant::now();
@@ -447,7 +447,7 @@ impl Debug for TimeMeasurement {
 }
 
 impl Sum for TimeMeasurement {
-    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+    fn sum<I: Iterator<Item=Self>>(iter: I) -> Self {
         iter.fold(TimeMeasurement::default(), |acc, next| acc + next)
     }
 }
