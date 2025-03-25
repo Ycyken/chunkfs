@@ -7,8 +7,9 @@ use std::fs::OpenOptions;
 use std::io::{Error, ErrorKind, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::FileExt;
+use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::io;
+use libc::O_DIRECT;
 
 /// Serves as base functionality for storing the actual data as key-value pairs.
 ///
@@ -270,6 +271,7 @@ where
             .truncate(true)
             .read(true)
             .write(true)
+            .custom_flags(O_DIRECT)
             .open(file_path)?;
         file.set_len(total_size)?;
 
@@ -326,10 +328,21 @@ where
         })
     }
 
+    fn padding_to_multiple_block_size(&self, length: u64) -> u64 {
+        if length % self.block_size == 0 {
+            0
+        } else {
+            let blocks_number = length.div_ceil(self.block_size);
+            blocks_number * self.block_size - length
+        }
+    }
+
     fn write<T: Serialize>(&mut self, value: T) -> io::Result<DataInfo> {
-        let encoded = serialize(&value).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+        let mut encoded = serialize(&value).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         let data_length = encoded.len() as u64;
         let blocks_number = data_length.div_ceil(self.block_size);
+        let padding_size = self.padding_to_multiple_block_size(data_length);
+        encoded.extend(vec![0; padding_size as usize]); // padding for work with O_DIRECT flag
 
         if self.used_blocks * self.block_size + data_length >= self.total_size {
             return Err(Error::new(ErrorKind::OutOfMemory, "out of memory"));
@@ -345,7 +358,9 @@ where
 
     fn read<T: for<'a> Deserialize<'a>>(&self, data_info: DataInfo) -> io::Result<T> {
         let mut data = vec![0u8; data_info.data_length as usize];
-
+        let padding_size = self.padding_to_multiple_block_size(data.len() as u64);
+        data.extend(vec![0; padding_size as usize]);
+        
         self.device.read_at(&mut data, data_info.start_block * self.block_size)?;
         let data = deserialize(&data).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         Ok(data)
