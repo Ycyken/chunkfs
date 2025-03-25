@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crate::{ChunkHash, Hasher, SEG_SIZE};
 use crate::{ChunkerRef, WriteMeasurements};
 
-use super::database::{Database, IterableDatabase};
+use super::database::{Database, IterableScrubDatabase, ScrubDatabase};
 use super::scrub::{Scrub, ScrubMeasurements};
 
 /// Container for storage data.
@@ -42,32 +42,28 @@ impl<Hash: ChunkHash> Span<Hash> {
 }
 
 /// Underlying storage for the actual stored data.
-pub struct ChunkStorage<H, Hash, B, K, T>
+pub struct ChunkStorage<H, Hash, B, K>
 where
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
-    B: Database<Hash, DataContainer<K>>,
-    T: Database<K, Vec<u8>>,
+    B: ScrubDatabase<Hash, DataContainer<K>, K, Vec<u8>>,
 {
     database: B,
-    scrubber: Option<Box<dyn Scrub<Hash, B, K, T>>>,
-    target_map: T,
+    scrubber: Option<Box<dyn Scrub<Hash, B, K>>>,
     hasher: H,
     size_written: usize,
 }
 
-impl<H, Hash, B, K, T> ChunkStorage<H, Hash, B, K, T>
+impl<H, Hash, B, K> ChunkStorage<H, Hash, B, K>
 where
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
-    B: Database<H::Hash, DataContainer<K>>,
-    T: Database<K, Vec<u8>>,
+    B: ScrubDatabase<H::Hash, DataContainer<K>, K, Vec<u8>>,
 {
-    pub fn new(database: B, hasher: H, target_map: T) -> Self {
+    pub fn new(database: B, hasher: H) -> Self {
         Self {
             database,
             scrubber: None,
-            target_map,
             hasher,
             size_written: 0,
         }
@@ -152,8 +148,8 @@ where
             .map(|container| match &container.0 {
                 Data::Chunk(chunk) => Ok(chunk.clone()),
                 Data::TargetChunk(keys) => Ok(self
-                    .target_map
-                    .get_multi(keys)?
+                    .database
+                    .target_map_get_multi(keys)?
                     .into_iter()
                     .flatten()
                     .collect()),
@@ -162,23 +158,20 @@ where
     }
 }
 
-impl<H, Hash, B, K, T> ChunkStorage<H, Hash, B, K, T>
+impl<H, Hash, B, K> ChunkStorage<H, Hash, B, K>
 where
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
-    B: IterableDatabase<H::Hash, DataContainer<K>>,
-    T: Database<K, Vec<u8>>,
+    B: IterableScrubDatabase<H::Hash, DataContainer<K>, K, Vec<u8>>,
 {
     pub fn new_with_scrubber(
         database: B,
-        target_map: T,
-        scrubber: Box<dyn Scrub<Hash, B, K, T>>,
+        scrubber: Box<dyn Scrub<Hash, B, K>>,
         hasher: H,
     ) -> Self {
         Self {
             database,
             scrubber: Some(scrubber),
-            target_map,
             hasher,
             size_written: 0,
         }
@@ -193,13 +186,13 @@ where
                     "scrubber cannot be used with CDC filesystem",
                 )
             })?
-            .scrub(&mut self.database, &mut self.target_map)
+            .scrub(&mut self.database)
     }
 
     /// Returns size of CDC chunks in the storage. Doesn't count for chunks processed with SBC or FBC.
     fn total_cdc_size(&self) -> usize {
         self.database
-            .values()
+            .db_values()
             .fold(0, |total_size, container| match container.extract() {
                 Data::Chunk(chunk) => total_size + chunk.len(),
                 Data::TargetChunk(_) => total_size,
@@ -215,7 +208,7 @@ where
     pub fn average_chunk_size(&self) -> usize {
         let (count, size) = self
             .database
-            .values()
+            .db_values()
             .fold((0, 0), |(count, size), container| {
                 let chunk_size = match container.extract() {
                     Data::Chunk(chunk) => chunk.len(),
@@ -230,7 +223,7 @@ where
     pub fn full_cdc_dedup_ratio(&self) -> f64 {
         let key_size = self
             .database
-            .keys()
+            .db_keys()
             .map(|key| self.hasher.len(&key))
             .sum::<usize>();
 
@@ -238,7 +231,7 @@ where
     }
 
     pub fn iterator(&self) -> Box<dyn Iterator<Item=(Hash, DataContainer<K>)> + '_> {
-        self.database.iterator()
+        self.database.db_iterator()
     }
 
     /// Removes all stored data in the database and sets written size to 0.
@@ -248,18 +241,16 @@ where
     }
 }
 
-impl<H, Hash, B, K, T> ChunkStorage<H, Hash, B, K, T>
+impl<H, Hash, B, K> ChunkStorage<H, Hash, B, K>
 where
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
-    B: IterableDatabase<H::Hash, DataContainer<K>>,
-    T: IterableDatabase<K, Vec<u8>>,
+    B: IterableScrubDatabase<H::Hash, DataContainer<K>, K, Vec<u8>>,
 {
     fn total_size(&self) -> usize {
         let cdc_size = self.total_cdc_size();
         let scrubbed_size = self
-            .target_map
-            .values()
+            .database.target_map_values()
             .fold(0, |total_size, data| total_size + data.len());
         cdc_size + scrubbed_size
     }
@@ -271,8 +262,7 @@ where
     /// Removes all stored data in the target map and sets written size to 0.
     pub fn clear_database_full(&mut self) -> io::Result<()> {
         self.size_written = 0;
-        self.database.clear()?;
-        self.target_map.clear()
+        self.database.clear()
     }
 }
 
@@ -440,6 +430,7 @@ impl<K> Default for Data<K> {
 
 #[cfg(test)]
 mod tests {
+    use crate::system::database::{DatabasePair, ScrubDatabase};
     use std::collections::HashMap;
 
     use super::ChunkStorage;
@@ -448,16 +439,16 @@ mod tests {
     use crate::chunkers::{FSChunker, SuperChunker};
     use crate::hashers::SimpleHasher;
     use crate::system::scrub::DumbScrubber;
+    use crate::system::database::Database;
 
     #[test]
     fn hashmap_works_as_cdc_map() {
-        let mut map: HashMap<Vec<u8>, DataContainer<()>> = HashMap::new();
-        map.insert(vec![1], DataContainer::from(vec![]));
-        map.insert(vec![2], DataContainer::from(vec![]));
+        let mut db: DatabasePair<HashMap<Vec<u8>, DataContainer<()>>, _, Vec<u8>, DataContainer<()>, _, _> = DatabasePair::new(HashMap::default(), HashMap::default());
+        db.insert(vec![1], DataContainer::from(vec![])).unwrap();
+        db.insert(vec![2], DataContainer::from(vec![])).unwrap();
         let mut chunk_storage = ChunkStorage {
-            database: map,
+            database: db,
             scrubber: Some(Box::new(DumbScrubber)),
-            target_map: HashMap::default(),
             hasher: SimpleHasher,
             size_written: 0,
         };
@@ -466,19 +457,17 @@ mod tests {
             .scrubber
             .as_mut()
             .unwrap()
-            .scrub(&mut chunk_storage.database, &mut chunk_storage.target_map)
+            .scrub(&mut chunk_storage.database)
             .unwrap();
         assert_eq!(measurements, ScrubMeasurements::default());
-
-        println!("{:?}", chunk_storage.database)
     }
 
     #[test]
     fn total_cdc_size_is_calculated_correctly_for_fixed_size_chunker_on_simple_data() {
+        let db = DatabasePair::new(HashMap::<Vec<u8>, DataContainer<()>>::default(), HashMap::default());
         let mut chunk_storage = ChunkStorage::new(
-            HashMap::<Vec<u8>, DataContainer<()>>::new(),
+            db,
             SimpleHasher,
-            HashMap::default(),
         );
 
         let data = vec![10; 1024 * 1024];
@@ -491,10 +480,10 @@ mod tests {
 
     #[test]
     fn size_written_is_calculated_correctly() {
+        let db = DatabasePair::new(HashMap::<Vec<u8>, DataContainer<()>>::default(), HashMap::default());
         let mut chunk_storage = ChunkStorage::new(
-            HashMap::<Vec<u8>, DataContainer<()>>::new(),
+            db,
             SimpleHasher,
-            HashMap::default(),
         );
 
         let data = [

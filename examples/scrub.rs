@@ -5,12 +5,12 @@ use std::io::{BufReader, Read, Seek};
 use chunkfs::bench::generator::fio;
 use chunkfs::chunkers::SuperChunker;
 use chunkfs::hashers::Sha256Hasher;
-use chunkfs::FileSystem;
+use chunkfs::{DatabasePair, FileSystem};
 
 fn main() -> io::Result<()> {
+    let db = DatabasePair::new(HashMap::default(), HashMap::default());
     let mut fs = FileSystem::new_with_scrubber(
-        HashMap::default(),
-        HashMap::default(),
+        db,
         Box::new(chunkfs::CopyScrubber),
         Sha256Hasher::default(),
     );

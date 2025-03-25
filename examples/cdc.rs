@@ -4,12 +4,12 @@ use std::io::{BufReader, Read as _, Seek as _};
 
 use chunkfs::bench::generator::fio;
 use chunkfs::chunkers::SuperChunker;
-use chunkfs::create_cdc_filesystem;
+use chunkfs::{create_cdc_filesystem, DatabasePair};
 use chunkfs::hashers::Sha256Hasher;
 
 fn main() -> io::Result<()> {
-    let base = HashMap::default();
-    let mut fs = create_cdc_filesystem(base, Sha256Hasher::default());
+    let db = DatabasePair::new(HashMap::default(), HashMap::default());
+    let mut fs = create_cdc_filesystem(db, Sha256Hasher::default());
 
     let mut file = fs.create_file("file", SuperChunker::default())?;
 

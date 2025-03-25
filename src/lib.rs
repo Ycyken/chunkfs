@@ -5,7 +5,7 @@ use std::ops::{Add, AddAssign, Deref, DerefMut};
 use std::rc::Rc;
 use std::time::Duration;
 
-pub use system::database::{Database, IterableDatabase};
+pub use system::database::{Database, IterableDatabase, DatabasePair, DiskDatabase};
 pub use system::scrub::{CopyScrubber, Scrub, ScrubMeasurements};
 pub use system::storage::{Data, DataContainer};
 pub use system::{create_cdc_filesystem, FileSystem};

@@ -8,9 +8,11 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::io::BufWriter;
+use chunkfs::DatabasePair;
 
 fn main() -> io::Result<()> {
-    let mut fixture = CDCFixture::new(HashMap::new(), Sha256Hasher::default());
+    let db = DatabasePair::new(HashMap::default(), HashMap::default());
+    let mut fixture = CDCFixture::new(db, Sha256Hasher::default());
 
     let dataset = fio("a", 100000, 30)?;
 

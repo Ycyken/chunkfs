@@ -1,20 +1,20 @@
+use crate::ChunkHash;
+use bincode::{deserialize, serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::{io};
-use std::fs::{File};
-use std::io::{ErrorKind, Seek, SeekFrom, Write};
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::{Error, ErrorKind, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::FileExt;
-use bincode::{deserialize, serialize};
-use serde::{Deserialize, Serialize};
-use crate::{ChunkHash};
-use std::fs::{OpenOptions};
+use std::io;
 
 /// Serves as base functionality for storing the actual data as key-value pairs.
 ///
 /// Supports inserting and getting values by key, checking if the key is present in the storage.
 pub trait Database<K, V> {
-    fn init(blkdev_path: &str) -> Result<Self, io::Error>
+    fn init(blkdev_path: &str) -> Result<Self, Error>
     where
         Self: Sized;
 
@@ -72,7 +72,7 @@ pub trait IterableDatabase<K, V>: Database<K, V> {
 }
 
 impl<Hash: ChunkHash, V: Clone> Database<Hash, V> for HashMap<Hash, V> {
-    fn init(_: &str) -> Result<Self, io::Error> { Ok(HashMap::new()) }
+    fn init(_: &str) -> Result<Self, Error> { Ok(HashMap::new()) }
 
     fn insert(&mut self, key: Hash, value: V) -> io::Result<()> {
         self.entry(key).or_insert(value);
@@ -80,7 +80,7 @@ impl<Hash: ChunkHash, V: Clone> Database<Hash, V> for HashMap<Hash, V> {
     }
 
     fn get(&self, key: &Hash) -> io::Result<V> {
-        (&*self).get(key).ok_or(ErrorKind::NotFound.into()).cloned()
+        self.get(key).ok_or(ErrorKind::NotFound.into()).cloned()
     }
 
     fn contains(&self, key: &Hash) -> bool {
@@ -147,7 +147,7 @@ impl<Hash: ChunkHash, V: Clone> IterableDatabase<Hash, V> for HashMap<Hash, V> {
 // }
 // }
 
-pub trait ScrubDatabase<K1, V1, K2, V2> {
+pub trait ScrubDatabase<K1, V1, K2, V2>: Database<K1, V1> {
     /// Inserts a key-value pair into the database.
     fn db_insert(&mut self, key: K1, value: V1) -> io::Result<()>;
 
@@ -244,7 +244,7 @@ struct DataInfo {
 const BLKGETSIZE64: u64 = 0x80081272;
 const BLKSSZGET: u64 = 0x1268;
 
-struct DiskDatabase<K1, V1, K2, V2>
+pub struct DiskDatabase<K1, V1, K2, V2>
 where
     K1: ChunkHash,
     K2: ChunkHash,
@@ -260,8 +260,7 @@ where
     block_size: u64,
     blocks_number: u64,
     used_blocks: u64,
-    data_type1: PhantomData<V1>,
-    data_type2: PhantomData<V2>,
+    _data_types: PhantomData<(V1, V2)>,
 }
 
 impl<K1, V1, K2, V2> DiskDatabase<K1, V1, K2, V2>
@@ -272,12 +271,12 @@ where
     V2: Clone + Serialize + for<'a> Deserialize<'a>,
 {
     fn write<T: Serialize>(&mut self, value: T) -> io::Result<DataInfo> {
-        let encoded = serialize(&value).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
+        let encoded = serialize(&value).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         let data_length = encoded.len() as u64;
         let blocks_number = data_length.div_ceil(self.block_size);
 
         if self.used_blocks * self.block_size + data_length >= self.total_size {
-            return Err(io::Error::new(ErrorKind::OutOfMemory, "out of memory"));
+            return Err(Error::new(ErrorKind::OutOfMemory, "out of memory"));
         }
 
         self.device.seek(SeekFrom::Start(self.used_blocks * self.block_size))?;
@@ -292,7 +291,7 @@ where
         let mut data = vec![0u8; data_info.data_length as usize];
 
         self.device.read_at(&mut data, data_info.start_block * self.block_size)?;
-        let data = deserialize(&data).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
+        let data = deserialize(&data).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         Ok(data)
     }
 }
@@ -373,34 +372,150 @@ where
     }
 }
 
-impl<K1, V1, K2, V2> Database<K1, V1> for DiskDatabase<K1, V1, K2, V2>
+pub struct DatabasePair<D1, D2, K1, V1, K2, V2>
 where
+    D1: Database<K1, V1>,
+    D2: Database<K2, V2>,
     K1: ChunkHash,
     K2: ChunkHash,
     V1: Clone,
     V2: Clone,
-    V1: Serialize,
-    V1: for<'a> Deserialize<'a>,
-    V2: Serialize,
-    V2: for<'a> Deserialize<'a>,
 {
-    fn init(blkdev_path: &str) -> Result<Self, io::Error> {
+    database: D1,
+    target_map: D2,
+    _marker: PhantomData<(K1, V1, K2, V2)>,
+}
+
+impl<D1, D2, K1, V1, K2, V2> DatabasePair<D1, D2, K1, V1, K2, V2>
+where
+    D1: Database<K1, V1>,
+    D2: Database<K2, V2>,
+    K1: ChunkHash,
+    K2: ChunkHash,
+    V1: Clone,
+    V2: Clone,
+{
+    pub fn new(database: D1, target_map: D2) -> Self { Self { database, target_map, _marker: PhantomData } }
+}
+
+impl<D1, D2, K1, V1, K2, V2> Database<K1, V1> for DatabasePair<D1, D2, K1, V1, K2, V2>
+where
+    D1: Database<K1, V1>,
+    D2: Database<K2, V2>,
+    K1: ChunkHash,
+    K2: ChunkHash,
+    V1: Clone,
+    V2: Clone,
+{
+    fn init(_blkdev_path: &str) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        unimplemented!()
+    }
+
+    fn insert(&mut self, key: K1, value: V1) -> io::Result<()> {
+        self.database.insert(key, value)
+    }
+
+    fn get(&self, key: &K1) -> io::Result<V1> {
+        self.database.get(key)
+    }
+
+    fn contains(&self, key: &K1) -> bool {
+        self.database.contains(key)
+    }
+}
+
+impl<D1, D2, K1, V1, K2, V2> ScrubDatabase<K1, V1, K2, V2> for DatabasePair<D1, D2, K1, V1, K2, V2>
+where
+    D1: Database<K1, V1>,
+    D2: Database<K2, V2>,
+    K1: ChunkHash,
+    K2: ChunkHash,
+    V1: Clone,
+    V2: Clone,
+{
+    fn db_insert(&mut self, key: K1, value: V1) -> io::Result<()> {
+        self.database.insert(key, value)
+    }
+
+    fn db_get(&self, key: &K1) -> io::Result<V1> {
+        self.database.get(key)
+    }
+
+    fn db_contains(&self, key: &K1) -> bool {
+        self.database.contains(key)
+    }
+
+    fn target_map_insert(&mut self, key: K2, value: V2) -> io::Result<()> {
+        self.target_map.insert(key, value)
+    }
+
+    fn target_map_get(&self, key: &K2) -> io::Result<V2> {
+        self.target_map.get(key)
+    }
+    fn target_map_contains(&self, key: &K2) -> bool {
+        self.target_map.contains(key)
+    }
+}
+
+impl<D1, D2, K1, V1, K2, V2> IterableScrubDatabase<K1, V1, K2, V2> for DatabasePair<D1, D2, K1, V1, K2, V2>
+where
+    D1: IterableDatabase<K1, V1>,
+    D2: IterableDatabase<K2, V2>,
+    K1: ChunkHash,
+    K2: ChunkHash,
+    V1: Clone,
+    V2: Clone,
+{
+    fn db_iterator(&self) -> Box<dyn Iterator<Item=(K1, V1)> + '_> {
+        self.database.iterator()
+    }
+
+    fn db_keys(&self) -> Box<dyn Iterator<Item=K1> + '_> {
+        self.database.keys()
+    }
+
+    fn target_map_iterator(&self) -> Box<dyn Iterator<Item=(K2, V2)> + '_> {
+        self.target_map.iterator()
+    }
+
+    fn target_map_keys(&self) -> Box<dyn Iterator<Item=K2> + '_> {
+        self.target_map.keys()
+    }
+
+    fn clear(&mut self) -> io::Result<()> {
+        self.database.clear()?;
+        self.target_map.clear()?;
+        Ok(())
+    }
+}
+
+impl<K1, V1, K2, V2> Database<K1, V1> for DiskDatabase<K1, V1, K2, V2>
+where
+    K1: ChunkHash,
+    K2: ChunkHash,
+    V1: Clone + Serialize + for<'a> Deserialize<'a>,
+    V2: Clone + Serialize + for<'a> Deserialize<'a>,
+{
+    fn init(blkdev_path: &str) -> Result<Self, Error> {
         let device = OpenOptions::new()
             .read(true)
             .write(true)
             .open(blkdev_path)?;
-        let fd = device.as_raw_fd();
+        let _fd = device.as_raw_fd();
 
         let mut total_size: u64 = 0;
         let mut block_size: u64 = 0;
-        if -1 == unsafe { libc::ioctl(fd, BLKGETSIZE64, &mut total_size) } {
-            return Err(io::Error::last_os_error());
+        if -1 == unsafe { libc::ioctl(_fd, BLKGETSIZE64, &mut total_size) } {
+            return Err(Error::last_os_error());
         };
-        if -1 == unsafe { libc::ioctl(fd, BLKSSZGET, &mut block_size) } {
-            return Err(io::Error::last_os_error());
+        if -1 == unsafe { libc::ioctl(_fd, BLKSSZGET, &mut block_size) } {
+            return Err(Error::last_os_error());
         };
         if block_size == 0 {
-            return Err(io::Error::new(ErrorKind::InvalidData, "block size cannot be 0"));
+            return Err(Error::new(ErrorKind::InvalidData, "block size cannot be 0"));
         }
         let blocks_number = total_size / block_size;
 
@@ -415,8 +530,7 @@ where
             block_size,
             blocks_number,
             used_blocks: 0,
-            data_type1: PhantomData,
-            data_type2: PhantomData,
+            _data_types: PhantomData {},
         })
     }
 
@@ -435,16 +549,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-    use crate::system::database::{DiskDatabase, ScrubDatabase};
-    use std::marker::PhantomData;
     use super::*;
+    use crate::system::database::{DiskDatabase, ScrubDatabase};
     use crate::KB;
     use chunkfs::hashers::Sha256Hasher;
     use chunkfs::Hasher;
-    use sha2::Sha256;
     use sha2::digest::Output;
-    use std::io::{Write};
+    use sha2::Sha256;
+    use std::io::Write;
+    use std::marker::PhantomData;
 
     impl<K1, V1, K2, V2> DiskDatabase<K1, V1, K2, V2>
     where
@@ -453,7 +566,7 @@ mod tests {
         V1: Clone + Serialize + for<'a> Deserialize<'a>,
         V2: Clone + Serialize + for<'a> Deserialize<'a>,
     {
-        fn init_on_regular_file(file_path: &str, total_size: u64) -> Result<Self, io::Error> {
+        fn init_on_regular_file(file_path: &str, total_size: u64) -> Result<Self, Error> {
             let file = OpenOptions::new()
                 .create(true)
                 .truncate(true)
@@ -477,8 +590,7 @@ mod tests {
                 block_size: 512,
                 blocks_number,
                 used_blocks: 0,
-                data_type1: PhantomData,
-                data_type2: PhantomData,
+                _data_types: PhantomData,
             })
         }
     }

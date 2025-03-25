@@ -5,9 +5,11 @@ use chunkfs::bench::{CDCFixture, Dataset};
 use chunkfs::chunkers::SuperChunker;
 use chunkfs::hashers::Sha256Hasher;
 use chunkfs::MB;
+use chunkfs::DatabasePair;
 
 fn main() -> io::Result<()> {
-    let mut fixture = CDCFixture::new(HashMap::default(), Sha256Hasher::default());
+    let db = DatabasePair::new(HashMap::default(), HashMap::default());
+    let mut fixture = CDCFixture::new(db, Sha256Hasher::default());
 
     let mut handle = fixture.fs.create_file("file", SuperChunker::default())?;
     fixture.fs.write_to_file(&mut handle, &[3; 100 * MB])?;

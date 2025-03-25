@@ -3,11 +3,10 @@ use std::io;
 use std::io::Write;
 use std::path::Path;
 
-use database::{Database, IterableDatabase};
 use file_layer::{FileHandle, FileLayer};
 use scrub::{Scrub, ScrubMeasurements};
 use storage::{ChunkStorage, DataContainer};
-
+use crate::system::database::{IterableScrubDatabase, ScrubDatabase};
 use super::{ChunkHash, ChunkerRef, Hasher, WriteMeasurements};
 
 pub mod database;
@@ -20,14 +19,13 @@ pub mod storage;
 /// To create a file system that can be used with CDC algorithms only, [`create_cdc_filesystem`] should be used.
 ///
 /// If you want to test scrubber, [`FileSystem::new_with_scrubber`] should be used.
-pub struct FileSystem<B, H, Hash, K, T>
+pub struct FileSystem<B, H, Hash, K>
 where
-    B: Database<Hash, DataContainer<K>>,
+    B: ScrubDatabase<Hash, DataContainer<K>, K, Vec<u8>>,
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
-    T: Database<K, Vec<u8>>,
 {
-    storage: ChunkStorage<H, Hash, B, K, T>,
+    storage: ChunkStorage<H, Hash, B, K>,
     file_layer: FileLayer<Hash>,
 }
 
@@ -40,21 +38,20 @@ where
 pub fn create_cdc_filesystem<B, H, Hash>(
     base: B,
     hasher: H,
-) -> FileSystem<B, H, Hash, (), HashMap<(), Vec<u8>>>
+) -> FileSystem<B, H, Hash, ()>
 where
-    B: Database<Hash, DataContainer<()>>,
+    B: ScrubDatabase<Hash, DataContainer<()>, (), Vec<u8>>,
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
 {
-    FileSystem::new(base, hasher, HashMap::default())
+    FileSystem::new(base, hasher)
 }
 
-impl<B, H, Hash, K, T> FileSystem<B, H, Hash, K, T>
+impl<B, H, Hash, K> FileSystem<B, H, Hash, K>
 where
-    B: Database<Hash, DataContainer<K>>,
+    B: ScrubDatabase<Hash, DataContainer<K>, K, Vec<u8>>,
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
-    T: Database<K, Vec<u8>>,
 {
     /// Checks if the file with the given `name` exists.
     pub fn file_exists(&self, name: &str) -> bool {
@@ -208,32 +205,30 @@ where
 
     /// Creates a file system with the given [`hasher`][Hasher], `base` and `target_map`. Unlike [`new_with_scrubber`][Self::new_with_scrubber],
     /// doesn't require a database to be iterable. Resulting filesystem cannot be scrubbed using [`scrub`][Self::scrub].
-    fn new(base: B, hasher: H, target_map: T) -> Self {
+    fn new(base: B, hasher: H) -> Self {
         Self {
-            storage: ChunkStorage::new(base, hasher, target_map),
+            storage: ChunkStorage::new(base, hasher),
             file_layer: Default::default(),
         }
     }
 }
 
-impl<B, H, Hash, K, T> FileSystem<B, H, Hash, K, T>
+impl<B, H, Hash, K> FileSystem<B, H, Hash, K>
 where
-    B: IterableDatabase<Hash, DataContainer<K>>,
+    B: IterableScrubDatabase<Hash, DataContainer<K>, K, Vec<u8>>,
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
-    T: Database<K, Vec<u8>>,
 {
     /// Creates a file system with the given [`hasher`][Hasher], original [`database`][Database] and target map, and a [`scrubber`][Scrub].
     ///
     /// Provided `database` must implement [`IterableDatabase`].
     pub fn new_with_scrubber(
         database: B,
-        target_map: T,
-        scrubber: Box<dyn Scrub<Hash, B, K, T>>,
+        scrubber: Box<dyn Scrub<Hash, B, K>>,
         hasher: H,
     ) -> Self {
         Self {
-            storage: ChunkStorage::new_with_scrubber(database, target_map, scrubber, hasher),
+            storage: ChunkStorage::new_with_scrubber(database, scrubber, hasher),
             file_layer: Default::default(),
         }
     }
@@ -278,12 +273,11 @@ where
     }
 }
 
-impl<B, H, Hash, K, T> FileSystem<B, H, Hash, K, T>
+impl<B, H, Hash, K> FileSystem<B, H, Hash, K>
 where
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
-    B: IterableDatabase<H::Hash, DataContainer<K>>,
-    T: IterableDatabase<K, Vec<u8>>,
+    B: IterableScrubDatabase<H::Hash, DataContainer<K>, K, Vec<u8>>,
 {
     /// Calculates total deduplication ratio of the storage,
     /// accounting for chunks both unprocessed and processed with scrubber.

@@ -6,9 +6,11 @@ use chunkfs::chunkers::{SeqChunker, SuperChunker};
 use chunkfs::hashers::Sha256Hasher;
 use std::collections::HashMap;
 use std::io;
+use chunkfs::DatabasePair;
 
 fn main() -> io::Result<()> {
-    let mut fixture = CDCFixture::new(HashMap::default(), Sha256Hasher::default());
+    let db = DatabasePair::new(HashMap::default(), HashMap::default());
+    let mut fixture = CDCFixture::new(db, Sha256Hasher::default());
 
     let dataset = fio("a", 100000, 30)?;
 

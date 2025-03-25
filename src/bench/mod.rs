@@ -15,8 +15,9 @@ use uuid::Uuid;
 use crate::system::file_layer::FileHandle;
 use crate::{
     create_cdc_filesystem, ChunkHash, ChunkerRef, DataContainer, FileSystem, Hasher,
-    IterableDatabase, WriteMeasurements, MB,
+    WriteMeasurements, MB,
 };
+use crate::system::database::IterableScrubDatabase;
 
 /// A file system fixture that allows user to do measurements and carry out benchmarks
 /// for CDC algorithms.
@@ -24,16 +25,16 @@ use crate::{
 /// Clears the database before each method call.
 pub struct CDCFixture<B, H, Hash>
 where
-    B: IterableDatabase<Hash, DataContainer<()>>,
+    B: IterableScrubDatabase<Hash, DataContainer<()>, (), Vec<u8>>,
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
 {
-    pub fs: FileSystem<B, H, Hash, (), HashMap<(), Vec<u8>>>,
+    pub fs: FileSystem<B, H, Hash, ()>,
 }
 
 impl<B, H, Hash> CDCFixture<B, H, Hash>
 where
-    B: IterableDatabase<Hash, DataContainer<()>>,
+    B: IterableScrubDatabase<Hash, DataContainer<()>, (), Vec<u8>>,
     H: Hasher<Hash=Hash>,
     Hash: ChunkHash,
 {
