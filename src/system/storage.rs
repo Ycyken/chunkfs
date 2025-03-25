@@ -441,9 +441,11 @@ mod tests {
     use super::DataContainer;
     use super::ScrubMeasurements;
     use crate::chunkers::{FSChunker, SuperChunker};
+    use crate::DiskDatabase;
     use crate::hashers::SimpleHasher;
     use crate::system::scrub::DumbScrubber;
     use crate::system::database::Database;
+    use crate::MB;
 
     #[test]
     fn hashmap_works_as_cdc_map() {
@@ -468,7 +470,7 @@ mod tests {
 
     #[test]
     fn total_cdc_size_is_calculated_correctly_for_fixed_size_chunker_on_simple_data() {
-        let db = DatabasePair::new(HashMap::<Vec<u8>, DataContainer<()>>::default(), HashMap::default());
+        let db: DiskDatabase<Vec<u8>, DataContainer<()>, _, _> = DiskDatabase::init_on_regular_file("pseudo_dev", MB as u64).unwrap();
         let mut chunk_storage = ChunkStorage::new(
             db,
             SimpleHasher,
@@ -484,7 +486,7 @@ mod tests {
 
     #[test]
     fn size_written_is_calculated_correctly() {
-        let db = DatabasePair::new(HashMap::<Vec<u8>, DataContainer<()>>::default(), HashMap::default());
+        let db: DiskDatabase<Vec<u8>, DataContainer<()>, _, _> = DiskDatabase::init_on_regular_file("pseudo_dev", MB as u64).unwrap();
         let mut chunk_storage = ChunkStorage::new(
             db,
             SimpleHasher,
