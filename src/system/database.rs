@@ -14,10 +14,6 @@ use std::io;
 ///
 /// Supports inserting and getting values by key, checking if the key is present in the storage.
 pub trait Database<K, V> {
-    fn init(blkdev_path: &str) -> Result<Self, Error>
-    where
-        Self: Sized;
-
     /// Inserts a key-value pair into the storage.
     fn insert(&mut self, key: K, value: V) -> io::Result<()>;
 
@@ -72,8 +68,6 @@ pub trait IterableDatabase<K, V>: Database<K, V> {
 }
 
 impl<Hash: ChunkHash, V: Clone> Database<Hash, V> for HashMap<Hash, V> {
-    fn init(_: &str) -> Result<Self, Error> { Ok(HashMap::new()) }
-
     fn insert(&mut self, key: Hash, value: V) -> io::Result<()> {
         self.entry(key).or_insert(value);
         Ok(())
@@ -270,6 +264,68 @@ where
     V1: Clone + Serialize + for<'a> Deserialize<'a>,
     V2: Clone + Serialize + for<'a> Deserialize<'a>,
 {
+    pub fn init_on_regular_file(file_path: &str, total_size: u64) -> Result<Self, Error> {
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .read(true)
+            .write(true)
+            .open(file_path)?;
+        file.set_len(total_size)?;
+
+        let block_size = 512u64;
+        let blocks_number = total_size / block_size;
+
+        let database = HashMap::new();
+        let target_map = HashMap::new();
+
+        Ok(Self {
+            device: file,
+            database,
+            target_map,
+            total_size,
+            block_size: 512,
+            blocks_number,
+            used_blocks: 0,
+            _data_types: PhantomData,
+        })
+    }
+
+    pub fn init(blkdev_path: &str) -> Result<Self, Error> {
+        let device = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(blkdev_path)?;
+        let _fd = device.as_raw_fd();
+
+        let mut total_size: u64 = 0;
+        let mut block_size: u64 = 0;
+        if -1 == unsafe { libc::ioctl(_fd, BLKGETSIZE64, &mut total_size) } {
+            return Err(Error::last_os_error());
+        };
+        if -1 == unsafe { libc::ioctl(_fd, BLKSSZGET, &mut block_size) } {
+            return Err(Error::last_os_error());
+        };
+        if block_size == 0 {
+            return Err(Error::new(ErrorKind::InvalidData, "block size cannot be 0"));
+        }
+        let blocks_number = total_size / block_size;
+
+        let database = HashMap::new();
+        let target_map = HashMap::new();
+
+        Ok(Self {
+            device,
+            database,
+            target_map,
+            total_size,
+            block_size,
+            blocks_number,
+            used_blocks: 0,
+            _data_types: PhantomData {},
+        })
+    }
+
     fn write<T: Serialize>(&mut self, value: T) -> io::Result<DataInfo> {
         let encoded = serialize(&value).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         let data_length = encoded.len() as u64;
@@ -407,13 +463,6 @@ where
     V1: Clone,
     V2: Clone,
 {
-    fn init(_blkdev_path: &str) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        unimplemented!()
-    }
-
     fn insert(&mut self, key: K1, value: V1) -> io::Result<()> {
         self.database.insert(key, value)
     }
@@ -499,41 +548,6 @@ where
     V1: Clone + Serialize + for<'a> Deserialize<'a>,
     V2: Clone + Serialize + for<'a> Deserialize<'a>,
 {
-    fn init(blkdev_path: &str) -> Result<Self, Error> {
-        let device = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(blkdev_path)?;
-        let _fd = device.as_raw_fd();
-
-        let mut total_size: u64 = 0;
-        let mut block_size: u64 = 0;
-        if -1 == unsafe { libc::ioctl(_fd, BLKGETSIZE64, &mut total_size) } {
-            return Err(Error::last_os_error());
-        };
-        if -1 == unsafe { libc::ioctl(_fd, BLKSSZGET, &mut block_size) } {
-            return Err(Error::last_os_error());
-        };
-        if block_size == 0 {
-            return Err(Error::new(ErrorKind::InvalidData, "block size cannot be 0"));
-        }
-        let blocks_number = total_size / block_size;
-
-        let database = HashMap::new();
-        let target_map = HashMap::new();
-
-        Ok(Self {
-            device,
-            database,
-            target_map,
-            total_size,
-            block_size,
-            blocks_number,
-            used_blocks: 0,
-            _data_types: PhantomData {},
-        })
-    }
-
     fn insert(&mut self, key: K1, value: V1) -> io::Result<()> {
         self.db_insert(key, value)
     }
@@ -556,44 +570,6 @@ mod tests {
     use chunkfs::Hasher;
     use sha2::digest::Output;
     use sha2::Sha256;
-    use std::io::Write;
-    use std::marker::PhantomData;
-
-    impl<K1, V1, K2, V2> DiskDatabase<K1, V1, K2, V2>
-    where
-        K1: ChunkHash,
-        K2: ChunkHash,
-        V1: Clone + Serialize + for<'a> Deserialize<'a>,
-        V2: Clone + Serialize + for<'a> Deserialize<'a>,
-    {
-        fn init_on_regular_file(file_path: &str, total_size: u64) -> Result<Self, Error> {
-            let file = OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .read(true)
-                .write(true)
-                .open(file_path)?;
-            file.set_len(total_size)?;
-            let fd = file.as_raw_fd();
-
-            let block_size = 512u64;
-            let blocks_number = total_size / block_size;
-
-            let database = HashMap::new();
-            let target_map = HashMap::new();
-
-            Ok(Self {
-                device: file,
-                database,
-                target_map,
-                total_size,
-                block_size: 512,
-                blocks_number,
-                used_blocks: 0,
-                _data_types: PhantomData,
-            })
-        }
-    }
 
     #[test]
     fn diskdb_write_and_read() {
