@@ -342,11 +342,13 @@ where
             .map(|chunk| DataContainer(Data::Chunk(chunk)));
 
         let pairs = hashes.into_iter().zip(converted_chunks).collect(); // we allocate memory for (K, V) pairs, which is not really required
+        let start = Instant::now();
         base.insert_multi(pairs)?;
+        let save_time = start.elapsed();
 
         Ok(SpansInfo {
             spans,
-            measurements: WriteMeasurements::new(chunk_time, hash_time),
+            measurements: WriteMeasurements::new(save_time, chunk_time, hash_time),
             total_length,
         })
     }
@@ -367,12 +369,14 @@ where
         let hash = self.hasher.hash(&remainder);
         let hash_time = start.elapsed();
 
+        let start = Instant::now();
         base.insert(hash.clone(), DataContainer(Data::Chunk(remainder)))?;
+        let write_time = start.elapsed();
 
         let span = Span::new(hash, remainder_length);
         Ok(SpansInfo {
             spans: vec![span],
-            measurements: WriteMeasurements::new(Duration::default(), hash_time),
+            measurements: WriteMeasurements::new(write_time, Duration::default(), hash_time),
             total_length: remainder_length,
         })
     }
