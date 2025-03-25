@@ -123,7 +123,7 @@ fn non_iterable_database_can_be_used_with_fs() {
             unimplemented!()
         }
 
-        fn get(&mut self, _key: &Vec<u8>) -> std::io::Result<DataContainer<()>> {
+        fn get(&self, _key: &Vec<u8>) -> io::Result<DataContainer<()>> {
             unimplemented!()
         }
 

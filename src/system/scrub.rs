@@ -1,5 +1,6 @@
 use std::io;
 use std::time::{Duration, Instant};
+use std::borrow::BorrowMut;
 
 use crate::{ChunkHash, Data};
 
@@ -94,7 +95,9 @@ where
     {
         let now = Instant::now();
         let mut processed_data = 0;
-        for (hash, container) in database.iterator_mut() {
+        let keys = database.keys().collect::<Vec<_>>();
+        for hash in keys {
+            let mut container = database.get(&hash).unwrap();
             match container.extract() {
                 Data::Chunk(chunk) => {
                     target.insert(hash.clone(), chunk.clone())?;
@@ -102,7 +105,8 @@ where
                 }
                 Data::TargetChunk(_) => (),
             }
-            container.make_target(vec![hash.clone()]);
+            container.borrow_mut().make_target(vec![hash.clone()]);
+            database.insert(hash, container)?;
         }
         let running_time = now.elapsed();
         Ok(ScrubMeasurements {
