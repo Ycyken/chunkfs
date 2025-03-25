@@ -430,7 +430,7 @@ impl<K> Default for Data<K> {
 
 #[cfg(test)]
 mod tests {
-    use crate::system::database::{DatabasePair, ScrubDatabase};
+    use crate::system::database::{DatabasePair};
     use std::collections::HashMap;
 
     use super::ChunkStorage;

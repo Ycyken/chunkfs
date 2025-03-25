@@ -563,20 +563,17 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::system::database::{DiskDatabase, ScrubDatabase};
     use crate::KB;
     use chunkfs::hashers::Sha256Hasher;
     use chunkfs::Hasher;
-    use sha2::digest::Output;
-    use sha2::Sha256;
 
     #[test]
     fn diskdb_write_and_read() {
         let file_path = "pseudo_dev";
         let file_size = 1024 * 1024 * 12;
 
-        let mut scrub_db: DiskDatabase<Output<Sha256>, Vec<u8>, Output<Sha256>, Vec<u8>> =
+        let mut scrub_db: DiskDatabase<[u8; 32], Vec<u8>, [u8; 32], Vec<u8>> =
             DiskDatabase::init_on_regular_file(file_path, file_size).unwrap();
         let v1: Vec<u8> = vec![1; 8 * KB + 30];
         let v2: Vec<u8> = vec![2; 8 * KB + 70];
