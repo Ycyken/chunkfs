@@ -68,80 +68,6 @@ pub trait IterableDatabase<K, V>: Database<K, V> {
     fn clear(&mut self) -> io::Result<()>;
 }
 
-impl<Hash: ChunkHash, V: Clone> Database<Hash, V> for HashMap<Hash, V> {
-    fn insert(&mut self, key: Hash, value: V) -> io::Result<()> {
-        self.entry(key).or_insert(value);
-        Ok(())
-    }
-
-    fn get(&self, key: &Hash) -> io::Result<V> {
-        self.get(key).ok_or(ErrorKind::NotFound.into()).cloned()
-    }
-
-    fn contains(&self, key: &Hash) -> bool {
-        self.contains_key(key)
-    }
-}
-
-impl<Hash: ChunkHash, V: Clone> IterableDatabase<Hash, V> for HashMap<Hash, V> {
-    fn iterator(&self) -> Box<dyn Iterator<Item=(Hash, V)> + '_> {
-        Box::new(self.iter().map(|(k, v)| (k.clone(), v.clone())))
-    }
-
-    fn iterator_mut(&mut self) -> Box<dyn Iterator<Item=(&Hash, &mut V)> + '_> {
-        Box::new(self.iter_mut())
-    }
-
-    fn keys(&self) -> Box<dyn Iterator<Item=Hash> + '_> {
-        Box::new(self.keys().map(|k| k.clone()))
-    }
-
-    fn values(&self) -> Box<dyn Iterator<Item=V> + '_> {
-        Box::new(self.values().map(|v| v.clone()))
-    }
-
-    fn clear(&mut self) -> io::Result<()> {
-        HashMap::clear(self);
-        Ok(())
-    }
-}
-
-// impl<K, V> DiskDatabase<K, V> {
-// finds free k segments in a row and marks them with 1 in bitmap
-// fn find_and_mark_k_segments(&mut self, k: u64) -> Option<u64> {
-//     let mut start_segment: u64 = 0;
-//     let mut free_bits_count = 0;
-//     //  looking for k free bits in a row
-//     'outer: for (i, &interval) in self.bitmap.iter().enumerate() {
-//         let i = i as u64;
-//         for bit in 0..64 {
-//             if (interval & (1 << (63 - bit))) == 0 { // is the bit = 0
-//                 if free_bits_count == 0 {
-//                     start_segment = i * 64 + bit;
-//                 }
-//                 free_bits_count += 1;
-//                 if free_bits_count == k {
-//                     break 'outer;
-//                 }
-//             } else {
-//                 free_bits_count = 0;
-//             }
-//         }
-//     }
-//
-//     if free_bits_count == k {
-//         for j in 0..k {
-//             let bit_pos = start_segment + j;
-//             let interval_index = bit_pos / 64;
-//             let bit_in_interval = 63 - (bit_pos % 64);
-//             self.bitmap[interval_index as usize] |= 1 << bit_in_interval; // set bit to 1
-//         }
-//         return Some(start_segment);
-//     }
-//     None
-// }
-// }
-
 pub trait ScrubDatabase<K1, V1, K2, V2>: Database<K1, V1> {
     /// Inserts a key-value pair into the database.
     fn db_insert(&mut self, key: K1, value: V1) -> io::Result<()>;
@@ -228,6 +154,44 @@ pub trait IterableScrubDatabase<K1, V1, K2, V2>: ScrubDatabase<K1, V1, K2, V2> {
 
     /// Clears the database, removing all contained key-value pairs.
     fn clear(&mut self) -> io::Result<()>;
+}
+
+impl<Hash: ChunkHash, V: Clone> Database<Hash, V> for HashMap<Hash, V> {
+    fn insert(&mut self, key: Hash, value: V) -> io::Result<()> {
+        self.entry(key).or_insert(value);
+        Ok(())
+    }
+
+    fn get(&self, key: &Hash) -> io::Result<V> {
+        self.get(key).ok_or(ErrorKind::NotFound.into()).cloned()
+    }
+
+    fn contains(&self, key: &Hash) -> bool {
+        self.contains_key(key)
+    }
+}
+
+impl<Hash: ChunkHash, V: Clone> IterableDatabase<Hash, V> for HashMap<Hash, V> {
+    fn iterator(&self) -> Box<dyn Iterator<Item=(Hash, V)> + '_> {
+        Box::new(self.iter().map(|(k, v)| (k.clone(), v.clone())))
+    }
+
+    fn iterator_mut(&mut self) -> Box<dyn Iterator<Item=(&Hash, &mut V)> + '_> {
+        Box::new(self.iter_mut())
+    }
+
+    fn keys(&self) -> Box<dyn Iterator<Item=Hash> + '_> {
+        Box::new(self.keys().map(|k| k.clone()))
+    }
+
+    fn values(&self) -> Box<dyn Iterator<Item=V> + '_> {
+        Box::new(self.values().map(|v| v.clone()))
+    }
+
+    fn clear(&mut self) -> io::Result<()> {
+        HashMap::clear(self);
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -328,6 +292,40 @@ where
         })
     }
 
+    // // finds free k segments in a row and marks them with 1 in bitmap
+    // fn find_and_mark_k_segments(&mut self, k: u64) -> Option<u64> {
+    //     let mut start_segment: u64 = 0;
+    //     let mut free_bits_count = 0;
+    //     //  looking for k free bits in a row
+    //     'outer: for (i, &interval) in self.bitmap.iter().enumerate() {
+    //         let i = i as u64;
+    //         for bit in 0..64 {
+    //             if (interval & (1 << (63 - bit))) == 0 { // is the bit = 0
+    //                 if free_bits_count == 0 {
+    //                     start_segment = i * 64 + bit;
+    //                 }
+    //                 free_bits_count += 1;
+    //                 if free_bits_count == k {
+    //                     break 'outer;
+    //                 }
+    //             } else {
+    //                 free_bits_count = 0;
+    //             }
+    //         }
+    //     }
+    //
+    //     if free_bits_count == k {
+    //         for j in 0..k {
+    //             let bit_pos = start_segment + j;
+    //             let interval_index = bit_pos / 64;
+    //             let bit_in_interval = 63 - (bit_pos % 64);
+    //             self.bitmap[interval_index as usize] |= 1 << bit_in_interval; // set bit to 1
+    //         }
+    //         return Some(start_segment);
+    //     }
+    //     None
+    // }
+
     fn padding_to_multiple_block_size(&self, length: u64) -> u64 {
         if length % self.block_size == 0 {
             0
@@ -360,10 +358,30 @@ where
         let mut data = vec![0u8; data_info.data_length as usize];
         let padding_size = self.padding_to_multiple_block_size(data.len() as u64);
         data.extend(vec![0; padding_size as usize]);
-        
+
         self.device.read_at(&mut data, data_info.start_block * self.block_size)?;
         let data = deserialize(&data).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
         Ok(data)
+    }
+}
+
+impl<K1, V1, K2, V2> Database<K1, V1> for DiskDatabase<K1, V1, K2, V2>
+where
+    K1: ChunkHash,
+    K2: ChunkHash,
+    V1: Clone + Serialize + for<'a> Deserialize<'a>,
+    V2: Clone + Serialize + for<'a> Deserialize<'a>,
+{
+    fn insert(&mut self, key: K1, value: V1) -> io::Result<()> {
+        self.db_insert(key, value)
+    }
+
+    fn get(&self, key: &K1) -> io::Result<V1> {
+        self.db_get(key)
+    }
+
+    fn contains(&self, key: &K1) -> bool {
+        self.db_contains(key)
     }
 }
 
@@ -553,26 +571,6 @@ where
         self.database.clear()?;
         self.target_map.clear()?;
         Ok(())
-    }
-}
-
-impl<K1, V1, K2, V2> Database<K1, V1> for DiskDatabase<K1, V1, K2, V2>
-where
-    K1: ChunkHash,
-    K2: ChunkHash,
-    V1: Clone + Serialize + for<'a> Deserialize<'a>,
-    V2: Clone + Serialize + for<'a> Deserialize<'a>,
-{
-    fn insert(&mut self, key: K1, value: V1) -> io::Result<()> {
-        self.db_insert(key, value)
-    }
-
-    fn get(&self, key: &K1) -> io::Result<V1> {
-        self.db_get(key)
-    }
-
-    fn contains(&self, key: &K1) -> bool {
-        self.db_contains(key)
     }
 }
 
