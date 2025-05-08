@@ -1,11 +1,10 @@
+use criterion::measurement::WallTime;
+use criterion::{BatchSize, BenchmarkGroup, BenchmarkId, Criterion, Throughput};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 
-use criterion::measurement::WallTime;
-use criterion::{BatchSize, BenchmarkGroup, BenchmarkId, Criterion, Throughput};
-
-use chunkfs::bench::Dataset;
+use chunkfs::bench::{CDCFixture, Dataset};
 use chunkfs::chunkers::{LeapChunker, RabinChunker, SuperChunker, UltraChunker};
 use chunkfs::hashers::Sha256Hasher;
 use chunkfs::{create_cdc_filesystem, ChunkerRef};
@@ -39,12 +38,16 @@ fn get_chunker(algorithm: Algorithms) -> ChunkerRef {
 }
 
 pub fn bench(c: &mut Criterion) {
-    let datasets = vec![Dataset::new("kernel.tar", "kernel").unwrap()];
+    let datasets = vec![Dataset::new("archX4.tar", "archX4").unwrap()];
 
     for dataset in datasets {
         let mut group = c.benchmark_group("Chunkers");
         group.sample_size(SAMPLE_SIZE);
         group.throughput(Throughput::Bytes(dataset.size as u64));
+
+        for chunker in chunkers() {
+            dedup_ratio_and_avg_chunk(&dataset, chunker);
+        }
 
         for chunker in chunkers() {
             bench_write(&dataset, &mut group, chunker);
@@ -54,6 +57,16 @@ pub fn bench(c: &mut Criterion) {
             bench_read(&dataset, &mut group, chunker);
         }
     }
+}
+
+fn dedup_ratio_and_avg_chunk(dataset: &Dataset, algorithm: Algorithms) {
+    let mut cdc_fixture = CDCFixture::new(HashMap::default(), Sha256Hasher::default());
+    let res = cdc_fixture
+        .measure(dataset, get_chunker(algorithm))
+        .unwrap();
+
+    println!("{:?} dedup ratio: {:.2}", algorithm, res.dedup_ratio);
+    println!("{:?} average chunk size: {}", algorithm, res.avg_chunk_size);
 }
 
 fn bench_write(dataset: &Dataset, group: &mut BenchmarkGroup<WallTime>, algorithm: Algorithms) {
