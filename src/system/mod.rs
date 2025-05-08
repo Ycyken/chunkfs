@@ -11,7 +11,9 @@ use storage::{ChunkStorage, DataContainer};
 
 use super::{ChunkHash, ChunkerRef, Hasher, WriteMeasurements, SEG_SIZE};
 
+mod data_block;
 pub mod database;
+pub mod disk_database;
 pub mod file_layer;
 pub mod fuse_filesystem;
 pub mod scrub;
