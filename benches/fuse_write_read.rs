@@ -2,12 +2,11 @@ use cdc_chunkers::SizeParams;
 use chunkfs::bench::Dataset;
 use chunkfs::chunkers::{LeapChunker, RabinChunker, SuperChunker, UltraChunker};
 use chunkfs::hashers::Sha256Hasher;
-use chunkfs::{ChunkerRef, FuseFS, IOC_GET_AVG_CHUNK_SIZE, IOC_GET_DEDUP_RATIO, MB};
+use chunkfs::{ChunkerRef, DiskDatabase, FuseFS, IOC_GET_AVG_CHUNK_SIZE, IOC_GET_DEDUP_RATIO, MB};
 use criterion::measurement::WallTime;
 use criterion::{BatchSize, BenchmarkGroup, BenchmarkId, Criterion, Throughput};
 use fuser::MountOption::AutoUnmount;
 use libc::O_DIRECT;
-use std::collections::HashMap;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -83,7 +82,7 @@ pub fn bench(c: &mut Criterion) {
 
 fn dedup_ratio_and_avg_chunk(dataset: &Dataset, algorithm: Algorithms, params: SizeParams) {
     let mount_point = Path::new("mount_dir/mount_point");
-    let db = HashMap::default();
+    let db = DiskDatabase::init("/dev/nvme1n1p4", true).unwrap();
     let chunker = get_chunker(algorithm, params);
     let fuse_fs = FuseFS::new(db, Sha256Hasher::default(), chunker);
 
@@ -145,7 +144,7 @@ fn bench_write(
         b.iter_batched(
             || {
                 let mount_point = Path::new("mount_dir/mount_point");
-                let db = HashMap::default();
+                let db = DiskDatabase::init("/dev/nvme1n1p4", true).unwrap();
                 let chunker = get_chunker(algorithm, params);
                 let fuse_fs = FuseFS::new(db, Sha256Hasher::default(), chunker);
 
@@ -190,7 +189,7 @@ fn bench_read(
     params: SizeParams,
 ) {
     let mount_point = Path::new("mount_dir/mount_point");
-    let db = HashMap::default();
+    let db = DiskDatabase::init("/dev/nvme1n1p4", true).unwrap();
     let chunker = get_chunker(algorithm, params);
     let fuse_fs = FuseFS::new(db, Sha256Hasher::default(), chunker);
 
